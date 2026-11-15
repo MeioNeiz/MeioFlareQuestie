@@ -1,0 +1,13 @@
+## Interface: 16001
+## Title: FlareQuestie
+## Notes: FlareUI's quest tracker with Questie's data: distance sorting, quest item buttons, turn-in NPCs, Show on Map and nearest-objective tooltips. Needs two small FlareUI patches.
+## Version: 1.0.0
+## Author: MeioNeiz
+## X-Website: https://github.com/MeioNeiz/FlareQuestie
+## X-License: MIT
+## Dependencies: FlareUI
+## OptionalDeps: Questie
+## SavedVariables: FlareQuestieDB
+## X-LocalMods-Patches: 52-flareui-tracker-questie-hooks 53-flareui-tracker-expose-layout
+
+FlareQuestie.lua

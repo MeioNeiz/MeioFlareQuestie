@@ -1,0 +1,86 @@
+Title: FlareUI quest tracker hook points for Questie data (used by the FlareQuestie overlay)
+Why: FlareUI's tracker only knows what Blizzard's API tells it, and on Forever that is thin: quest POI distances are missing for most quests (Sort By Distance does nothing), classic quest items aren't "special" items (no item buttons), finished quests just say "Ready to turn in", and Show on Map only opens the zone. These are local functions, so a hook can't reach them. Each hunk adds one optional call (OT.Local*) that the FlareQuestie overlay fills from Questie's database; without the overlay every hunk falls through to FlareUI's own code. Alt-click on a quest is new: Show on Map.
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+local function Distance(questID)
+    local distSq, onContinent = C_QuestLog.GetDistanceSqToQuest(questID)
+--- NEW
+local function Distance(questID)
+    -- LOCAL FIX: a provider (FlareQuestie: Questie's spawn data, squared yards) answers first
+    local provided = OT.LocalDistance and OT.LocalDistance(questID)
+    if provided then return provided end
+    local distSq, onContinent = C_QuestLog.GetDistanceSqToQuest(questID)
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+local function ShowOnMap(questID)
+    if not CanOpenPanels() then return end
+--- NEW
+local function ShowOnMap(questID)
+    if not CanOpenPanels() then return end
+    -- LOCAL FIX: FlareQuestie: Questie's map at the nearest objective (or turn-in), the quest's icons flashing
+    if OT.LocalShowOnMap and OT.LocalShowOnMap(questID) then return end
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+    elseif IsControlKeyDown() then
+        ToggleFocus(questID)
+--- NEW
+    elseif IsAltKeyDown() then
+        -- LOCAL FIX: Alt-click shows the quest on the map
+        ShowOnMap(questID)
+    elseif IsControlKeyDown() then
+        ToggleFocus(questID)
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+        GameTooltip:SetQuestLogSpecialItem(self.logIndex)
+--- NEW
+        -- LOCAL FIX: an item from Questie's database has no quest log slot: its tooltip by item ID
+        if self.localItemID then GameTooltip:SetItemByID(self.localItemID) else GameTooltip:SetQuestLogSpecialItem(self.logIndex) end
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+                link, texture, charges, showWhenComplete = GetQuestLogSpecialItemInfo(line.logIndex)
+            end
+--- NEW
+                link, texture, charges, showWhenComplete = GetQuestLogSpecialItemInfo(line.logIndex)
+                -- LOCAL FIX: no Blizzard quest item: the usable item Questie's database knows (FlareQuestie)
+                if not link and OT.LocalQuestItem then link, texture, charges, showWhenComplete = OT.LocalQuestItem(line.questID) end
+            end
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+                b.logIndex = line.logIndex
+--- NEW
+                b.logIndex = line.logIndex
+                -- LOCAL FIX: set when the item came from Questie's database (tooltip and cooldown by item ID)
+                b.localItemID = (not line.sampleItem and line.logIndex and not GetQuestLogSpecialItemInfo(line.logIndex)) and tonumber(itemID) or nil
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+        if waypoint and waypoint ~= "" then return waypoint end
+        return TEXT.ready
+--- NEW
+        if waypoint and waypoint ~= "" then return waypoint end
+        -- LOCAL FIX: FlareQuestie: who to return to, from Questie's database
+        local returnTo = OT.LocalCompleteText and OT.LocalCompleteText(q.questID)
+        if returnTo then return returnTo end
+        return TEXT.ready
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+ns.modules["ObjectiveTracker"] = OT
+--- NEW
+ns.modules["ObjectiveTracker"] = OT
+-- LOCAL FIX: tells FlareQuestie this patch is in place
+OT.LocalHooks = 1
+=== END

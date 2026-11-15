@@ -1,0 +1,12 @@
+Title: FlareUI quest tracker layout constants reachable (for FlareQuestie's compact mode)
+Why: the tracker's spacing (header height, padding, gaps between quests and lines) is a local table, so it can't be made tighter from outside. This exposes it as OT.Constants; FlareQuestie shrinks it at load, before the tracker builds its frames. Without FlareQuestie nothing changes.
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+-- Shared with the settings specimen so its palette follows the live tracker.
+--- NEW
+-- LOCAL FIX: the layout constants, for FlareQuestie's compact spacing (read on every render)
+OT.Constants = C
+
+-- Shared with the settings specimen so its palette follows the live tracker.
+=== END
