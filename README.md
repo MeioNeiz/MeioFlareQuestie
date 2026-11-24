@@ -50,7 +50,7 @@ the patched tracker works exactly like FlareUI's own.
 
 ## Feedback
 
-Bugs and ideas: [GitHub issues](https://github.com/MeioNeiz/FlareQuestie/issues)
+Bugs and ideas: [GitHub issues](https://github.com/MeioNeiz/MeioFlareQuestie/issues)
 
 ## More Meio addons
 

@@ -1,4 +1,4 @@
-# FlareQuestie
+# MeioFlareQuestie
 
 ## 1.2.0
 
