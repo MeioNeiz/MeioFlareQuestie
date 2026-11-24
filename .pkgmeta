@@ -8,3 +8,7 @@ ignore:
   - patches
   - mods.ps1
   - README.md
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown

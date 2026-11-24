@@ -5,7 +5,9 @@ LocalMods manager: keeps local WoW addon changes in place across addon updates.
   pwsh -File mods.ps1            apply: install overlay addons, apply every patch
   pwsh -File mods.ps1 status     check only, change nothing
   pwsh -File mods.ps1 revert <patch-name>   undo one patch (its NEW back to OLD)
+  pwsh -File mods.ps1 revert trim           put the trimmed translations back (from backups\)
 
+-Only A,B limits apply to those overlay addons / patch names / 'trim'; the rest are only checked.
 -AddOns <path> points any of them at another install. Without it: _forever_\Interface\AddOns
 beside this folder when it sits in the WoW folder, else the standard install
 C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns.
@@ -23,9 +25,13 @@ param(
     [ValidateSet('apply', 'status', 'revert')][string]$Command = 'apply',
     [string]$Name,
     [string]$AddOns = (Join-Path $PSScriptRoot '..\_forever_\Interface\AddOns'),
-    [switch]$Coordinator
+    [switch]$Coordinator,
+    [string[]]$Only
 )
 $ErrorActionPreference = 'Stop'
+# pwsh -File passes "a,b" as one string
+$Only = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
+function Skip-Item([string]$n) { $Only.Count -and $n -notin $Only }
 $lockPath = Join-Path $PSScriptRoot 'deploy.lock'
 if ($Command -ne 'status' -and -not $Coordinator -and (Test-Path $lockPath)) {
     Write-Host "LOCKED: $((Get-Content -Raw $lockPath).Trim())"
@@ -195,7 +201,7 @@ foreach ($src in Get-ChildItem (Join-Path $Root 'addons') -Directory -ErrorActio
     }
     $missing = -not (Test-Path $dest)
     if ($changed.Count -eq 0) { Say "- $($src.Name): installed, up to date"; continue }
-    if ($checkOnly) { Say "- $($src.Name): $($missing ? 'NOT INSTALLED' : "out of date ($($changed -join ', '))")"; continue }
+    if ($checkOnly -or (Skip-Item $src.Name)) { Say "- $($src.Name): $($missing ? 'NOT INSTALLED' : "out of date ($($changed -join ', '))")"; continue }
     foreach ($rel in $changed) {
         $d = Join-Path $dest $rel
         New-Item -ItemType Directory -Force (Split-Path $d) | Out-Null
@@ -205,11 +211,44 @@ foreach ($src in Get-ChildItem (Join-Path $Root 'addons') -Directory -ErrorActio
     Say "- $($src.Name): $($missing ? 'INSTALLED (new)' : "updated ($($changed -join ', '))")"
 }
 
+# ---------------------------------------------------------------- retired addons
+# Old folders the game keeps loading: KafStats still claims /stats and KafStatsCharDB.
+# Report only: deleting is the player's call (it may hold SavedVariables they want).
+$retired = [ordered]@{
+    KafStats = 'renamed MeioStats; fights it over /stats and KafStatsCharDB'
+    CraftProfit = 'folded into Meionomics'
+    BaganatorPawn = 'Forever Leveling BiS draws its own Baganator arrows'
+    PawnForever = 'replaced by Forever Leveling BiS scores (TooltipFold, Meionomics)'
+    LeaveButton = 'renamed NextStop; would show a second button'
+    SpellDPS = 'renamed MeioDPS'
+    WandBar = 'renamed MeioPlates'
+    PetAlert = 'renamed MeioPets'
+    MapPlus = 'renamed MeioMap'
+    AltView = 'renamed MeioAlts'
+    FlightTimes = 'renamed MeioFlightTimes; would time flights twice'
+    BlizzFixes = 'renamed MeioFixes; would apply the same fixes twice'
+}
+$wtf = Join-Path $AddOns '..\..\WTF\Account'
+$retiredFound = @($retired.Keys | Where-Object { Test-Path -LiteralPath (Join-Path $AddOns $_) })
+if ($retiredFound) {
+    Say ''
+    Say '## Retired addons still installed'
+    foreach ($name in $retiredFound) {
+        $on = @(Get-ChildItem $wtf -Recurse -Filter AddOns.txt -ErrorAction SilentlyContinue |
+            Where-Object { Select-String -LiteralPath $_.FullName -Pattern "^$name\s*:\s*enabled" -Quiet } |
+            ForEach-Object { $_.Directory.Name })
+        $where = $on ? "enabled for $($on -join ', ')" : 'disabled'
+        Say "- **RETIRED** $name ($($retired[$name])), $where. Disable it in the AddOns list or delete $AddOns\$name."
+    }
+}
+
 # ---------------------------------------------------------------- patches
 Say ''
 Say '## Patches'
 $patchFiles = Get-ChildItem (Join-Path $Root 'patches') -Filter *.patch | Sort-Object Name
-if ($Command -eq 'revert') {
+$trimRevert = $Command -eq 'revert' -and $Name -eq 'trim'
+if ($trimRevert) { $patchFiles = @() }
+elseif ($Command -eq 'revert') {
     if (-not $Name) { throw 'revert needs a patch name' }
     $patchFiles = $patchFiles | Where-Object { $_.BaseName -eq $Name }
     if (-not $patchFiles) { throw "no patch named $Name" }
@@ -254,12 +293,74 @@ foreach ($pf in $patchFiles) {
     }
     $todo = @($states | Where-Object { $_ -ne 'applied' }).Count
     if ($todo -eq 0) { Say "- ok $label$(($Command -eq 'revert') ? ' (already reverted)' : '')"; continue }
-    if ($checkOnly) { Say "- NEEDS APPLYING $label$($notes ? " ($($notes -join '; '))" : '')"; continue }
+    if ($checkOnly -or (Skip-Item $p.Name)) { Say "- NEEDS APPLYING $label$($notes ? " ($($notes -join '; '))" : '')"; continue }
     foreach ($path in $texts.Keys) {
         if ($texts[$path] -ne $files[$path].Text) { Write-Text $path $files[$path] $texts[$path] }
     }
     $verb = ($Command -eq 'revert') ? 'REVERTED' : (($todo -lt $states.Count) ? 'COMPLETED' : 'APPLIED')
     Say "- $verb $label$($notes ? " - $($notes -join '; ')" : '')"
+}
+
+# ---------------------------------------------------------------- trim: English only
+# Translations the game compiles on every load and reload although an English client never
+# uses them (~14 MB of the ~66 MB loaded). Each folder was checked by hand: its files return
+# early off-locale (AceLocale, GetLocale guards) or only feed FlareUI's language picker, so a
+# one-line stub changes nothing in English. Folders, not a pattern over whole addons:
+# RXPGuides\lang\Guides-* also match the names, and are not plain translations.
+# An addon update restores the files; the next run stubs them again.
+$trimDirs = @(
+    'RareScanner\Locales'
+    'RareScanner\ExternalLibs\LibBabble-SubZone-3.0\Locale'
+    'ForeverLevelingBiS\Locales'
+    'ForeverLevelingBiS\Data'
+    'FlareUI\Locales'
+    'TradeSkillMaster\Locale'
+    'TidyPlates_ThreatPlates\Locales'
+    'RXPGuides\locale'
+    'NauticusClassicResurrected\Locales'
+    'GTFO\Localization'
+)
+$trimLocale = '(^|[_.-])(deDE|frFR|esES|esMX|ptBR|ruRU|koKR|zhCN|zhTW|itIT|huHU)[_.-]'
+$trimStub = "-- LocalMods trim: English only, translation not loaded. mods.ps1 revert trim restores it.`n"
+function Test-Stub([IO.FileInfo]$f) {
+    $f.Length -lt 200 -and [IO.File]::ReadAllText($f.FullName) -eq $trimStub
+}
+Say ''
+Say '## Trim (English only)'
+if ($Command -eq 'revert' -and -not $trimRevert) { Say '- not touched by this revert' }
+else {
+    $backupRuns = @(Get-ChildItem (Join-Path $Root 'backups') -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending)
+    foreach ($dir in $trimDirs) {
+        $addon = ($dir -split '\\')[0]
+        $full = Join-Path $AddOns $dir
+        if (-not (Test-Path -LiteralPath (Join-Path $AddOns $addon))) { Say "- skipped $dir - $addon not installed"; continue }
+        if (-not (Test-Path -LiteralPath $full)) {
+            $problems++
+            Say "- **GONE** ${dir}: folder not found, $addon changed its layout. Find where its translations went and update `$trimDirs."
+            continue
+        }
+        $files = @(Get-ChildItem -LiteralPath $full -Filter *.lua -File | Where-Object { $_.Name -match $trimLocale })
+        $stubbed = @($files | Where-Object { Test-Stub $_ })
+        if ($trimRevert) {
+            $lost = @()
+            foreach ($f in $stubbed) {
+                $rel = [IO.Path]::GetRelativePath($AddOns, $f.FullName)
+                $from = $backupRuns | ForEach-Object { Join-Path $_.FullName $rel } |
+                    Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+                if ($from) { Copy-Item -LiteralPath $from $f.FullName -Force } else { $lost += $f.Name }
+            }
+            $note = $lost ? "; no backup of $($lost -join ', '): reinstall $addon" : ''
+            Say "- RESTORED ${dir}: $($stubbed.Count - $lost.Count) file(s)$note"
+            continue
+        }
+        $todo = @($files | Where-Object { $_.FullName -notin $stubbed.FullName })
+        if ($todo.Count -eq 0) { Say "- ok $dir ($($stubbed.Count) stubbed)"; continue }
+        $mb = '{0:N1} MB' -f (($todo | Measure-Object Length -Sum).Sum / 1MB)
+        if ($checkOnly -or (Skip-Item 'trim')) { Say "- NEEDS APPLYING ${dir}: $($todo.Count) translation(s), $mb"; continue }
+        foreach ($f in $todo) { Write-Text $f.FullName ([pscustomobject]@{ Bom = $false }) $trimStub }
+        Say "- TRIMMED ${dir}: $($todo.Count) translation(s), $mb"
+    }
 }
 
 # ---------------------------------------------------------------- versions + summary

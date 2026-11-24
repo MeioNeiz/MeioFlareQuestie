@@ -1,0 +1,34 @@
+{
+  "title": "Meio FlareQuestie",
+  "summary": "Questie's data in FlareUI's quest tracker: yards to each quest, turn-in NPCs, quest items and a search.",
+  "cfCategory": "Quests & Leveling",
+  "cfExtra": [
+    "Map & Minimap"
+  ],
+  "wagoCategories": [
+    "Quests & Leveling",
+    "Map & Minimap"
+  ],
+  "gallery": [
+    {
+      "file": "before-after.png",
+      "title": "Before and after",
+      "description": "FlareUI's quest tracker alone, then with yards to each quest and the NPC to return to"
+    },
+    {
+      "file": "tooltip-objective.png",
+      "title": "Nearest objective",
+      "description": "A quest's tooltip with its nearest objective, how far and which way"
+    },
+    {
+      "file": "tooltip-turnin.png",
+      "title": "Turn-in NPC",
+      "description": "A finished quest's tooltip with the NPC to hand it in to, how far and which way"
+    },
+    {
+      "file": "search.png",
+      "title": "Search",
+      "description": "Typing raptor in the tracker's search box lists only the quest that needs raptors"
+    }
+  ]
+}

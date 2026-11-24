@@ -2,3 +2,4 @@ backups/
 state.json
 last-run.md
 *.zip
+.release/

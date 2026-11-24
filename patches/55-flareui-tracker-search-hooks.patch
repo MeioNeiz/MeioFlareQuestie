@@ -1,0 +1,53 @@
+Title: FlareUI quest tracker search hook points (used by FlareQuestie's search box)
+Why: the tracker picks which quests to list inside a local function, so a search can't narrow it from outside. One optional call (OT.LocalFilter) answers per quest while FlareQuestie's search box holds text: false hides the quest, true lists it, tracked or not (untracked ones dimmed, as Show Untracked Quests draws them) and in any zone. OT.LocalEmptyText says why nothing shows when nothing matches, and OT.CreateBoxButton lets the search button match the header's own. Without FlareQuestie nothing changes.
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+        local questID = info.questID
+        local loose = showUntracked and not info.isHeader and not info.ftWatched and not info.isHidden
+--- NEW
+        local questID = info.questID
+        -- LOCAL FIX: FlareQuestie's search (nil: no search); a match is listed tracked or not, in any zone
+        local found = OT.LocalFilter and not info.isHeader and OT.LocalFilter(info, header)
+        local loose = (showUntracked or found) and not info.isHeader and not info.ftWatched and not info.isHidden
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+            loose = here and true or false
+--- NEW
+            loose = (here or found) and true or false -- LOCAL FIX: search match from any zone
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+        elseif info.ftWatched or loose then
+--- NEW
+        elseif (info.ftWatched or loose) and found ~= false then -- LOCAL FIX: search misses hidden
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+            if here or not db.zoneOnly or questTimers[info.questID] then
+--- NEW
+            if here or not db.zoneOnly or questTimers[info.questID] or found then -- LOCAL FIX: search ignores Zone
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+                    or L["No quests tracked. Shift-click a quest in your quest log to track it."]
+--- NEW
+                    or L["No quests tracked. Shift-click a quest in your quest log to track it."]
+                -- LOCAL FIX: FlareQuestie's search says why nothing shows
+                hint = OT.LocalEmptyText and OT.LocalEmptyText() or hint
+=== END
+
+=== FILE FlareUI\Modules\ObjectiveTracker.lua
+--- OLD
+-- The header buttons' glyphs, as rectangles { x, y, w, h } in pixels of a box n pixels wide
+--- NEW
+-- LOCAL FIX: the header's box button, for FlareQuestie's search button
+OT.CreateBoxButton = CreateBoxButton
+
+-- The header buttons' glyphs, as rectangles { x, y, w, h } in pixels of a box n pixels wide
+=== END
