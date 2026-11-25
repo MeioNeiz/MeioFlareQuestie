@@ -43,6 +43,10 @@ Settings: Esc > Options > AddOns > MeioFlareQuestie
 - The rest of the quest chain on hover: "Next: Ormer's Revenge (then 1 more)" and the XP
   left in it
 - Ready for Questie's next big update, which shuts other addons out of its insides
+- A star on quests that are new on Forever, in the tracker and as "New on Forever" in
+  their tooltip
+- Quests Questie has no data for yet say so: "Not in Questie's data yet: no yards or
+  turn-in"
 
 ![Coming soon: Quest tooltip in FlareUI's tracker: Next: Ormer's Revenge, then 1 more, and
 Chain XP left: 6,700](docs/soon.png)
