@@ -38,6 +38,15 @@ Settings: Esc > Options > AddOns > MeioFlareQuestie
 - `/flarequestie size reset`: FlareUI's default tracker size
 - `/flarequestie search <text>`: the same as the magnifier
 
+## Coming soon
+
+- The rest of the quest chain on hover: "Next: Ormer's Revenge (then 1 more)" and the XP
+  left in it
+- Ready for Questie's next big update, which shuts other addons out of its insides
+
+![Coming soon: Quest tooltip in FlareUI's tracker: Next: Ormer's Revenge, then 1 more, and
+Chain XP left: 6,700](docs/soon.png)
+
 ## Install
 
 Needs FlareUI with its quest tracker on, and Questie (without it, only resizing and compact
