@@ -1,5 +1,5 @@
-Title: FlareUI quest tracker hook points for Questie data (used by the FlareQuestie overlay)
-Why: FlareUI's tracker only knows what Blizzard's API tells it, and on Forever that is thin: quest POI distances are missing for most quests (Sort By Distance does nothing), classic quest items aren't "special" items (no item buttons), finished quests just say "Ready to turn in", and FlareUI has no Show on Map since 7.0.1. These are local functions, so a hook can't reach them. Each hunk adds one optional call (OT.Local*) that the FlareQuestie overlay fills from Questie's database; without the overlay every hunk falls through to FlareUI's own code. Alt-click on a quest is new: Show on Map.
+Title: FlareUI quest tracker hook points for Questie data (used by the MeioFlareQuestie overlay)
+Why: FlareUI's tracker only knows what Blizzard's API tells it, and on Forever that is thin: quest POI distances are missing for most quests (Sort By Distance does nothing), classic quest items aren't "special" items (no item buttons), finished quests just say "Ready to turn in", and FlareUI has no Show on Map since 7.0.1. These are local functions, so a hook can't reach them. Each hunk adds one optional call (OT.Local*) that the MeioFlareQuestie overlay fills from Questie's database; without the overlay every hunk falls through to FlareUI's own code. Alt-click on a quest is new: Show on Map.
 
 === FILE FlareUI\Modules\ObjectiveTracker.lua
 --- OLD

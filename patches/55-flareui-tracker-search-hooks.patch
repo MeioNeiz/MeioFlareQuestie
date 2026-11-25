@@ -1,5 +1,5 @@
-Title: FlareUI quest tracker search hook points (used by FlareQuestie's search box)
-Why: the tracker picks which quests to list inside a local function, so a search can't narrow it from outside. One optional call (OT.LocalFilter) answers per quest while FlareQuestie's search box holds text: false hides the quest, true lists it, tracked or not (untracked ones dimmed, as Show Untracked Quests draws them) and in any zone. OT.LocalEmptyText says why nothing shows when nothing matches, and OT.CreateBoxButton lets the search button match the header's own. Without FlareQuestie nothing changes.
+Title: FlareUI quest tracker search hook points (used by MeioFlareQuestie's search box)
+Why: the tracker picks which quests to list inside a local function, so a search can't narrow it from outside. One optional call (OT.LocalFilter) answers per quest while MeioFlareQuestie's search box holds text: false hides the quest, true lists it, tracked or not (untracked ones dimmed, as Show Untracked Quests draws them) and in any zone. OT.LocalEmptyText says why nothing shows when nothing matches, and OT.CreateBoxButton lets the search button match the header's own. Without MeioFlareQuestie nothing changes.
 
 === FILE FlareUI\Modules\ObjectiveTracker.lua
 --- OLD

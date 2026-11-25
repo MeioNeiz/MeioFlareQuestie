@@ -1,4 +1,4 @@
--- FlareQuestie: FlareUI's quest tracker (the look) fed with Questie's database (the data).
+-- MeioFlareQuestie: FlareUI's quest tracker (the look) fed with Questie's database (the data).
 --
 -- FlareUI's tracker reads only Blizzard's quest API, which on Forever knows little about
 -- where things are. Questie knows every spawn, item and turn-in NPC. Patch 52 gives
@@ -6,14 +6,14 @@
 -- exposes its spacing for compact mode. Without the patches only the resize grip, the
 -- distances and the tooltip lines work.
 
-FlareQuestieDB = FlareQuestieDB or {}
+MeioFlareQuestieDB = MeioFlareQuestieDB or {}
 
 local DB_VERSION = 2
 local db
 local OT -- FlareUI.ObjectiveTracker, set at PLAYER_LOGIN
 local category -- Settings panel
 
-local PREFIX = "|cffb090ffFlareQuestie:|r "
+local PREFIX = "|cffb090ffMeioFlareQuestie:|r "
 local GOLD, ON, OFF, HINT = "|cffffd100", "|cff80ff80", "|cffff8080", "|cff999999"
 
 local function Print(msg)
@@ -709,7 +709,7 @@ local function LayoutSearch(head)
 end
 
 local function InitDB()
-    db = FlareQuestieDB
+    db = MeioFlareQuestieDB
     if (db.dbVersion or 0) < 1 then
         -- before settings had defaults, compact was on unless turned off: keep that for
         -- anyone who already used it; new installs start with FlareUI's own spacing
@@ -732,7 +732,7 @@ end
 
 local function PatchAdvice(missing)
     return ("FlareUI isn't patched (%s), so most features are off. Run mods.ps1 from the"
-        .. " FlareQuestie download (see its README), then restart WoW."):format(
+        .. " MeioFlareQuestie download (see its README), then restart WoW."):format(
         table.concat(missing, ", "))
 end
 
@@ -779,7 +779,7 @@ local function Setup()
 end
 
 --------------------------------------------------
--- Settings panel (Esc > Options > AddOns > FlareQuestie)
+-- Settings panel (Esc > Options > AddOns > MeioFlareQuestie)
 --------------------------------------------------
 local function SetDistance(on)
     db.distance = on
@@ -793,7 +793,7 @@ end
 local function RegisterSettings()
     if category or not (Settings and Settings.RegisterVerticalLayoutCategory) then return end
     local layout
-    category, layout = Settings.RegisterVerticalLayoutCategory("FlareQuestie")
+    category, layout = Settings.RegisterVerticalLayoutCategory("MeioFlareQuestie")
     local function Section(name, tip)
         if layout and CreateSettingsListSectionHeaderInitializer then
             layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(name, tip))
@@ -804,20 +804,20 @@ local function RegisterSettings()
     Section("Quest tracker" .. note, "FlareUI's quest tracker, with where to go from"
         .. " Questie's database. Hover a quest for the nearest objective; Shift for more.")
 
-    local distance = Settings.RegisterAddOnSetting(category, "FLAREQUESTIE_DISTANCE",
+    local distance = Settings.RegisterAddOnSetting(category, "MEIOFLAREQUESTIE_DISTANCE",
         "distance", db, Settings.VarType.Boolean, "Quest distances", true)
     distance:SetValueChangedCallback(function(_, value) SetDistance(value) end)
     Settings.CreateCheckbox(category, distance, "Yards to the quest's nearest objective, or"
         .. " to its turn-in once done, at the right of its name. The nearest quest's is"
         .. " white. Needs Questie.")
 
-    local compact = Settings.RegisterAddOnSetting(category, "FLAREQUESTIE_COMPACT",
+    local compact = Settings.RegisterAddOnSetting(category, "MEIOFLAREQUESTIE_COMPACT",
         "compact", db, Settings.VarType.Boolean, "Compact spacing", false)
     compact:SetValueChangedCallback(function(_, value) SetCompact(value) end)
     Settings.CreateCheckbox(category, compact, "Tighter gaps around the tracker's lines and"
         .. " quests, so more fit. Takes effect after /reload.")
 
-    local fonts = Settings.RegisterProxySetting(category, "FLAREQUESTIE_FONTS",
+    local fonts = Settings.RegisterProxySetting(category, "MEIOFLAREQUESTIE_FONTS",
         Settings.VarType.String, "Text size", "default", FontSizes, function(value)
             if FONT_SIZES[value] then SetFontSizes(value) end
         end)
@@ -847,7 +847,7 @@ local function OpenSettings()
     return true
 end
 
-function FlareQuestie_OnAddonCompartmentClick()
+function MeioFlareQuestie_OnAddonCompartmentClick()
     OpenSettings()
 end
 
@@ -856,7 +856,7 @@ events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
 events:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
-        if arg1 ~= "FlareQuestie" then return end
+        if arg1 ~= "MeioFlareQuestie" then return end
         InitDB()
         ApplyCompact()
     elseif event == "PLAYER_LOGIN" then
@@ -941,7 +941,7 @@ local function Help()
     Line("/flarequestie size reset", "FlareUI's default tracker width and height")
     Line("/flarequestie search [text]", "list only the quests that match (no text: clear);"
         .. " also the magnifier in the tracker's header")
-    DEFAULT_CHAT_FRAME:AddMessage("  Settings: Esc > Options > AddOns > FlareQuestie ("
+    DEFAULT_CHAT_FRAME:AddMessage("  Settings: Esc > Options > AddOns > MeioFlareQuestie ("
         .. Cmd("/flarequestie settings") .. ")")
 end
 
@@ -951,8 +951,8 @@ local function NeedTracker()
     return false
 end
 
-SLASH_FLAREQUESTIE1 = "/flarequestie"
-SlashCmdList.FLAREQUESTIE = function(msg)
+SLASH_MEIOFLAREQUESTIE1 = "/flarequestie"
+SlashCmdList.MEIOFLAREQUESTIE = function(msg)
     local search = (msg or ""):match("^%s*[Ss][Ee][Aa][Rr][Cc][Hh]%f[%A](.*)$")
     if search then
         if not (NeedTracker() and searchBox) then
