@@ -18,6 +18,8 @@ Works on install:
 - The quest count turns orange at 2 free log slots and red when the log is full
 - Drag the grip in the tracker's free corner to resize it
 
+![A quest's tooltip in the tracker: "Nearest: Mottled Screecher, 6.6k yd N"](docs/tooltip-objective.png)
+
 FlareUI's tracker has no way for another addon to plug in, so the rest needs three small
 FlareUI patches (see Install; without them it says so at login):
 
@@ -26,6 +28,9 @@ FlareUI patches (see Install; without them it says so at login):
 - Show on Map (or Alt-click a quest) flashes the quest's Questie icons
 - Search: the magnifier in the header lists only the quests that match
 - Compact: tighter tracker spacing
+
+![Typing raptor in the tracker's search box lists only Ormer's Revenge, the quest that needs
+raptors](docs/search.png)
 
 Settings: Esc > Options > AddOns > MeioFlareQuestie
 
