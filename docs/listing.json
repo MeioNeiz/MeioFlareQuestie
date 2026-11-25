@@ -1,6 +1,6 @@
 {
-  "title": "Meio FlareQuestie",
-  "summary": "Questie's data in FlareUI's quest tracker: yards to each quest, turn-in NPCs, quest items and a search.",
+  "title": "Meio Flare Questie",
+  "summary": "Questie in FlareUI's quest tracker: yards to each quest and turn-in NPCs.",
   "cfCategory": "Quests & Leveling",
   "cfExtra": [
     "Map & Minimap"

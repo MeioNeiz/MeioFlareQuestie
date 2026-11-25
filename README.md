@@ -1,22 +1,31 @@
-# Meio FlareQuestie
+# Meio Flare Questie
 
 Questie's quest data in FlareUI's quest tracker: how far each quest is and who to hand it in to.
 
-![FlareUI's quest tracker with four quests in Duskwood: before, only the objectives and "Ready for turn-in"; with MeioFlareQuestie, yards to each quest and "Return to Lord Ello Ebonlocke"](docs/before-after.png)
+For WoW Forever.
+
+![FlareUI's quest tracker with two quests in Duskwood: before, only the objectives and "Ready for turn-in"; with Meio Flare Questie, yards to each quest and "Return to Lord Ello Ebonlocke"](docs/before-after.png)
 
 ## What it does
 
 [FlareUI](https://www.curseforge.com/projects/1718307) keeps the look,
 [Questie](https://www.curseforge.com/projects/334372) supplies where things are.
 
-- Yards to each quest, the nearest in white; FlareUI's Sort: Distance orders by them
-- "Return to" the turn-in NPC on finished quests, and Questie's quest items as buttons
+Works on install:
+
+- Yards to each quest, the nearest in white
 - Quest tooltips: the nearest objective or turn-in, with yards and direction
+- The quest count turns orange at 2 free log slots and red when the log is full
+- Drag the grip in the tracker's free corner to resize it
+
+FlareUI's tracker has no way for another addon to plug in, so the rest needs three small
+FlareUI patches (see Install; without them it says so at login):
+
+- "Return to" the turn-in NPC on finished quests, and Questie's quest items as buttons
+- FlareUI's Sort: Distance orders by the yards
 - Show on Map (or Alt-click a quest) flashes the quest's Questie icons
 - Search: the magnifier in the header lists only the quests that match
-
-The quest count turns orange at 2 free log slots and red when the log is full. Drag the
-grip in the tracker's free corner to resize it.
+- Compact: tighter tracker spacing
 
 Settings: Esc > Options > AddOns > MeioFlareQuestie
 
@@ -34,8 +43,7 @@ Settings: Esc > Options > AddOns > MeioFlareQuestie
 Needs FlareUI with its quest tracker on, and Questie (without it, only resizing and compact
 spacing work).
 
-FlareUI's tracker has no way for another addon to plug in, so most of MeioFlareQuestie needs
-three small FlareUI patches. Without them it says so at login.
+The patches, for the features listed above:
 
 1. Install PowerShell 7: `winget install Microsoft.PowerShell`
 2. Download this repository (**Code** > **Download ZIP**) and extract it
@@ -54,7 +62,7 @@ Bugs and ideas: [GitHub issues](https://github.com/MeioNeiz/MeioFlareQuestie/iss
 
 ## More Meio addons
 
-[Meio TrainerCompare](https://www.curseforge.com/wow/addons/trainercompare) | [Meio Next Stop](https://www.curseforge.com/wow/addons/leavebutton) | [Meio AutoRank](https://www.curseforge.com/wow/addons/meio-autorank) | [Meio MeterHover](https://www.curseforge.com/wow/addons/meterhover) | [Meio Map](https://addons.wago.io/addons/meiomap) | [Meio Alts](https://addons.wago.io/addons/meioalts) | [Meio DPS](https://addons.wago.io/addons/meiodps) | [Meio Plates](https://addons.wago.io/addons/meioplates) | [Meio Hub](https://addons.wago.io/addons/meiohub) | [Meio Pets](https://addons.wago.io/addons/meiopets) | [Meio Stats](https://addons.wago.io/addons/meiostats) | [Meio Bags](https://addons.wago.io/addons/meiobags) | [Meio Fixes](https://addons.wago.io/addons/meiofixes) | [Meio Flight Times](https://addons.wago.io/addons/meioflighttimes) | [Meio Mail](https://addons.wago.io/addons/meiomail) | [Meio Auto Run Turn](https://www.curseforge.com/wow/addons/meio-auto-run-turn) | [Meio TSM Browse](https://addons.wago.io/addons/tsmbrowse)
+[Meio Trainer Compare](https://www.curseforge.com/wow/addons/trainercompare) | [Meio Next Stop](https://www.curseforge.com/wow/addons/leavebutton) | [Meio Auto Rank](https://www.curseforge.com/wow/addons/meio-autorank) | [Meio Meter Hover](https://www.curseforge.com/wow/addons/meterhover) | [Meio Map](https://addons.wago.io/addons/meiomap) | [Meio Alts](https://addons.wago.io/addons/meioalts) | [Meio DPS](https://addons.wago.io/addons/meiodps) | [Meio Plates](https://addons.wago.io/addons/meioplates) | [Meio Hub](https://addons.wago.io/addons/meiohub) | [Meio Pets](https://addons.wago.io/addons/meiopets) | [Meio Stats](https://addons.wago.io/addons/meiostats) | [Meio Bags](https://addons.wago.io/addons/meiobags) | [Meio Fixes](https://addons.wago.io/addons/meiofixes) | [Meio Flight Times](https://addons.wago.io/addons/meioflighttimes) | [Meio Tooltip Fold](https://addons.wago.io/addons/meiotooltipfold) | [Meio Auto Run Turn](https://addons.wago.io/addons/meioautorunturn) | [Meio Mail](https://addons.wago.io/addons/meiomail) | [Meio QoL](https://addons.wago.io/addons/meioqol) | [Meio TSM Browse](https://addons.wago.io/addons/tsmbrowse)
 
 ## Licence
 
