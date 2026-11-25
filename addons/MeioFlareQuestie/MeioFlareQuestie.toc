@@ -8,6 +8,8 @@
 ## Author: MeioNeiz
 ## X-Website: https://github.com/MeioNeiz/MeioFlareQuestie
 ## X-License: MIT
+## X-Curse-Project-ID: 1829461
+## X-Wago-ID: RNL4VENo
 ## Dependencies: FlareUI
 ## OptionalDeps: Questie
 ## SavedVariables: MeioFlareQuestieDB
