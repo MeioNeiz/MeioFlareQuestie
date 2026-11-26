@@ -15,17 +15,25 @@ Works on install:
 
 - Yards to each quest, the nearest in white
 - Quest tooltips: the nearest objective or turn-in, with yards and direction
+- The rest of the quest chain on hover: "Next: Ormer's Revenge (then 1 more)" and the XP
+  left in it
+- Quests Questie has no data for yet say so: "Not in Questie's data yet: no yards or
+  turn-in"
 - The quest count turns orange at 2 free log slots and red when the log is full
 - Drag the grip in the tracker's free corner to resize it
+- Ready for Questie's next big update, which shuts other addons out of its insides: it
+  reads only Questie's database
+- FlareUI 7.0.17 or newer: Questie's quest items as buttons in the tracker rows
 
 ![A quest's tooltip in the tracker: "Nearest: Mottled Screecher, 6.6k yd N"](docs/tooltip-objective.png)
 
-FlareUI's tracker has no way for another addon to plug in, so the rest needs three small
-FlareUI patches (see Install; without them it says so at login):
+The rest needs three small FlareUI patches (see Install; without them it says so at
+login):
 
-- "Return to" the turn-in NPC on finished quests, and Questie's quest items as buttons
+- "Return to" the turn-in NPC on finished quests, and Questie's quest items as buttons on
+  FlareUI before 7.0.17
 - FlareUI's Sort: Distance orders by the yards
-- Show on Map (or Alt-click a quest) flashes the quest's Questie icons
+- Show on Map (or Alt-click a quest) opens the map of the nearest objective's zone
 - Search: the magnifier in the header lists only the quests that match
 - Compact: tighter tracker spacing
 
@@ -42,19 +50,6 @@ Settings: Esc > Options > AddOns > MeioFlareQuestie
 - `/flarequestie fonts small|default`: smaller tracker text, or FlareUI's
 - `/flarequestie size reset`: FlareUI's default tracker size
 - `/flarequestie search <text>`: the same as the magnifier
-
-## Coming soon
-
-- The rest of the quest chain on hover: "Next: Ormer's Revenge (then 1 more)" and the XP
-  left in it
-- Ready for Questie's next big update, which shuts other addons out of its insides
-- A star on quests that are new on Forever, in the tracker and as "New on Forever" in
-  their tooltip
-- Quests Questie has no data for yet say so: "Not in Questie's data yet: no yards or
-  turn-in"
-
-![Coming soon: Quest tooltip in FlareUI's tracker: Next: Ormer's Revenge, then 1 more, and
-Chain XP left: 6,700](docs/soon.png)
 
 ## Install
 

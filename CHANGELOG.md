@@ -1,5 +1,16 @@
 # MeioFlareQuestie
 
+## 1.3.0
+
+- Reads Questie's data through QuestieDB only, never Questie's insides: ready for Questie's
+  next big update, which shuts other addons out of them
+- FlareUI 7.0.17 and newer: plugs into FlareUI's new tracker API, with Questie's quest items
+  as buttons in each row's slot (works without the patches); older FlareUI as before
+- Quest tooltips: the rest of the chain, "Next: Ormer's Revenge (then 1 more)", and the XP
+  left in it
+- Quests Questie has no data for yet say so: "Not in Questie's data yet: no yards or turn-in"
+- Show on Map (or Alt-click a quest) opens the map of the nearest objective's zone
+
 ## 1.2.0
 
 - First release: Questie's data in FlareUI's quest tracker

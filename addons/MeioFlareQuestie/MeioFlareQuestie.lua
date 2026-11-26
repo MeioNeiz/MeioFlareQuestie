@@ -23,27 +23,271 @@ end
 local function OnOff(v) return v and (ON .. "on|r") or (OFF .. "off|r") end
 local function Cmd(text) return GOLD .. text .. "|r" end
 
--- DistanceUtils' "nothing found", and what it adds for a spot on another continent
-local NO_DATA = 999999999
+-- added to the distance of a spot on another continent, as Questie's DistanceUtils does
 local OTHER_PLACE = 500000
 
 --------------------------------------------------
--- Questie access (lazy and guarded: Questie loads its database after login)
+-- Questie access: only public routes, QuestieDB's LibQuestieDB (quest, NPC, object and item
+-- fields, zone maps, quest XP) and Blizzard's map API. Never QuestieLoader: Questie is making
+-- it private (issue 8463) and its public Questie.API has no spawns, items or zones.
 --------------------------------------------------
-local modules = {}
-local function Module(name)
-    local m = modules[name]
-    if m then return m end
-    if not (QuestieLoader and QuestieLoader.ImportModule) then return nil end
-    local ok, mod = pcall(QuestieLoader.ImportModule, QuestieLoader, name)
-    if ok and type(mod) == "table" then modules[name] = mod return mod end
+local function QuestieLoaded()
+    return C_AddOns.IsAddOnLoaded("Questie") and true or false
 end
 
--- Questie's own quest object for a quest in the log (objectives with spawn lists), or nil
-local function QuestOf(questID)
-    local AQ = Module("ActiveQuests")
-    local acceptance = AQ and AQ.Get and AQ.Get(questID)
-    return acceptance and acceptance.quest or nil
+-- fields used: name, spawns, finishedBy, objectives, triggerEnd, sourceItemId,
+-- requiredSourceItems, npcDrops, objectDrops, vendors, friendlyToFaction,
+-- nextQuestInChain; support tables ZoneDB and QuestXP
+local QDB_CONTRACT = 4
+
+local function QDB()
+    local lib = rawget(_G, "LibQuestieDB")
+    if type(lib) ~= "table" or type(lib.RequireContract) ~= "function" then return nil end
+    local ok, fits = pcall(lib.RequireContract, QDB_CONTRACT)
+    return ok and fits and lib or nil
+end
+
+-- the database is static, and each read of a table field builds a fresh copy: keep them
+local fieldCache = {}
+local function Field(kind, id, key)
+    local lib = QDB()
+    local entity = lib and lib[kind]
+    if not (type(id) == "number" and type(entity) == "table" and entity.Get) then return nil end
+    local cacheKey = kind .. id .. key
+    local v = fieldCache[cacheKey]
+    if v ~= nil then return v or nil end
+    local ok
+    ok, v = pcall(entity.Get, id, key)
+    if not ok then return nil end
+    fieldCache[cacheKey] = v == nil and false or v
+    return v
+end
+
+-- QuestieDB's support tables, the same ones Questie's ZoneDB and QuestXP read
+local function Support(name)
+    local lib = QDB()
+    local get = lib and type(lib.Support) == "table" and lib.Support.Get
+    if not get then return nil end
+    local ok, data = pcall(get, name)
+    return ok and type(data) == "table" and data or nil
+end
+
+-- stored as "return { ... }" source, decoded on first use
+local function Decode(value)
+    if type(value) == "table" then return value end
+    if type(value) ~= "string" then return nil end
+    local chunk = loadstring(value)
+    local ok, t = pcall(chunk or error)
+    return ok and type(t) == "table" and t or nil
+end
+
+local zoneMaps
+local function ZoneMaps()
+    if zoneMaps then return zoneMaps end
+    local zone = Support("ZoneDB")
+    local private = zone and zone.private
+    if type(private) ~= "table" then return nil end
+    local function Merged(base, override)
+        local t = {}
+        for k, v in pairs(Decode(base) or {}) do t[k] = v end
+        for k, v in pairs(Decode(override) or {}) do t[k] = v end
+        return t
+    end
+    zoneMaps = {
+        areaToMap = Merged(private.areaIdToUiMapId, private.areaIdToUiMapIdOverride),
+        mapToArea = Merged(private.uiMapIdToAreaId, private.uiMapIdToAreaIdOverride),
+        dungeons = type(private.dungeons) == "table" and private.dungeons or {},
+    }
+    return zoneMaps
+end
+
+local function UiMapOf(areaID)
+    local maps = ZoneMaps()
+    return maps and areaID and maps.areaToMap[areaID] or nil
+end
+
+local function PlayerAreaID()
+    local maps, mapID = ZoneMaps(), C_Map.GetBestMapForUnit("player")
+    return maps and mapID and maps.mapToArea[mapID] or nil
+end
+
+local function ZoneName(areaID)
+    if not areaID then return nil end
+    local name = C_Map.GetAreaInfo(areaID)
+    if name and name ~= "" then return name end
+    local mapID = UiMapOf(areaID)
+    local info = mapID and C_Map.GetMapInfo(mapID)
+    return info and info.name ~= "" and info.name or nil
+end
+
+-- A map's place in world yards, worked out as HereBeDragons does (Forever has Classic's
+-- maps: no continent transforms)
+local mapRects = {}
+local function MapRect(mapID)
+    local r = mapRects[mapID]
+    if r ~= nil then return r or nil end
+    r = false
+    local ok, instance, center = pcall(C_Map.GetWorldPosFromMapPos, mapID,
+        CreateVector2D(0.5, 0.5))
+    if ok and center then
+        local w, h
+        if C_Map.GetMapWorldSize then w, h = C_Map.GetMapWorldSize(mapID) end
+        if not (w and w > 0) then
+            local _, topLeft = C_Map.GetWorldPosFromMapPos(mapID, CreateVector2D(0, 0))
+            if topLeft then
+                local top, left = topLeft:GetXY()
+                local bottom, right = center:GetXY()
+                w, h = (left - right) * 2, (top - bottom) * 2
+            end
+        end
+        if w and h and w > 0 and h > 0 then
+            local top, left = center:GetXY()
+            r = { w = w, h = h, left = left + w / 2, top = top + h / 2,
+                instance = instance }
+        end
+    end
+    mapRects[mapID] = r
+    return r or nil
+end
+
+-- world x, y, instance of a spot given in a zone's 0-100 coordinates
+local function SpotWorld(areaID, x, y)
+    local mapID = UiMapOf(areaID)
+    local r = mapID and MapRect(mapID)
+    if not r then return nil end
+    return r.left - r.w * x / 100, r.top - r.h * y / 100, r.instance
+end
+
+local function PlayerWorld()
+    local y, x, _, instance = UnitPosition("player")
+    if x and y then return x, y, instance end
+end
+
+--------------------------------------------------
+-- Where to go next, from QuestieDB alone: the nearest spawn of an objective the quest log
+-- doesn't show finished, or the nearest turn-in NPC once the quest is complete
+--------------------------------------------------
+local function Friendly(npcID)
+    local side = Field("Npc", npcID, "friendlyToFaction")
+    -- as Questie reads it: no side is friendly to both
+    if not side or side == "AH" then return true end
+    local mine = UnitFactionGroup("player")
+    return (side == "A" and mine == "Alliance") or (side == "H" and mine == "Horde")
+end
+
+-- best: { spawn, zone, name, dist }; spawns: { [areaID] = { {x, y}, ... } }. Without a
+-- player position (instances) the first spot found wins, with no distance.
+local function Consider(best, spawns, name, px, py, pi)
+    if type(spawns) ~= "table" or not name then return end
+    local maps = ZoneMaps()
+    local function Spot(areaID, x, y)
+        local wx, wy, wi = SpotWorld(areaID, x, y)
+        local dist
+        if wx and px then
+            dist = math.sqrt((wx - px) ^ 2 + (wy - py) ^ 2)
+            if wi ~= pi then dist = OTHER_PLACE + dist * 100 end
+        end
+        if not best.name or (dist and (not best.dist or dist < best.dist)) then
+            best.spawn, best.zone, best.name, best.dist = { x, y }, areaID, name, dist
+        end
+    end
+    for areaID, list in pairs(spawns) do
+        for _, s in ipairs(type(list) == "table" and list or {}) do
+            if s[1] == -1 or s[2] == -1 then
+                -- inside a dungeon: its entrances
+                local dungeon = maps and maps.dungeons[areaID]
+                for _, at in ipairs(dungeon and dungeon[4] or {}) do
+                    Spot(at[1], at[2], at[3])
+                end
+            elseif s[1] and s[2] then
+                Spot(areaID, s[1], s[2])
+            end
+        end
+    end
+end
+
+-- friendly: only NPCs the player can talk to (turn-ins, vendors), as Questie picks them
+local function ConsiderNpc(best, npcID, friendly, ...)
+    if friendly and not Friendly(npcID) then return end
+    Consider(best, Field("Npc", npcID, "spawns"), Field("Npc", npcID, "name"), ...)
+end
+
+local function ConsiderObject(best, objectID, ...)
+    local spawns = Field("Object", objectID, "spawns")
+    local name = Field("Object", objectID, "name")
+    Consider(best, spawns, name, ...)
+end
+
+-- the quest log's own word on an objective: finished when a finished line names it
+local function Finished(blizz, ...)
+    for _, o in ipairs(blizz) do
+        local text = type(o.text) == "string" and o.text:lower()
+        if text then
+            for i = 1, select("#", ...) do
+                local name = select(i, ...)
+                if type(name) == "string" and name ~= ""
+                        and text:find(name:lower(), 1, true) then
+                    return o.finished and true or false
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function DBNearest(questID)
+    if not QDB() then return nil end
+    local best = {}
+    local px, py, pi = PlayerWorld()
+    if C_QuestLog.IsComplete(questID) then
+        local by = Field("Quest", questID, "finishedBy")
+        for _, npcID in ipairs(type(by) == "table" and by[1] or {}) do
+            ConsiderNpc(best, npcID, true, px, py, pi)
+        end
+        for _, objectID in ipairs(type(by) == "table" and by[2] or {}) do
+            ConsiderObject(best, objectID, px, py, pi)
+        end
+        return best.spawn, best.zone, best.name, best.dist
+    end
+    local objectives = Field("Quest", questID, "objectives")
+    objectives = type(objectives) == "table" and objectives or {}
+    local blizz = C_QuestLog.GetQuestObjectives(questID) or {}
+    for _, e in ipairs(objectives[1] or {}) do
+        if not Finished(blizz, Field("Npc", e[1], "name"), e[2]) then
+            ConsiderNpc(best, e[1], false, px, py, pi)
+        end
+    end
+    for _, e in ipairs(objectives[2] or {}) do
+        if not Finished(blizz, Field("Object", e[1], "name"), e[2]) then
+            ConsiderObject(best, e[1], px, py, pi)
+        end
+    end
+    for _, e in ipairs(objectives[3] or {}) do
+        local itemID = e[1]
+        if not Finished(blizz, Field("Item", itemID, "name"), e[2]) then
+            for _, npcID in ipairs(Field("Item", itemID, "npcDrops") or {}) do
+                ConsiderNpc(best, npcID, false, px, py, pi)
+            end
+            for _, npcID in ipairs(Field("Item", itemID, "vendors") or {}) do
+                ConsiderNpc(best, npcID, true, px, py, pi)
+            end
+            for _, objectID in ipairs(Field("Item", itemID, "objectDrops") or {}) do
+                ConsiderObject(best, objectID, px, py, pi)
+            end
+        end
+    end
+    -- "explore": text and spots
+    local trigger = Field("Quest", questID, "triggerEnd")
+    if type(trigger) == "table" and not Finished(blizz, trigger[1]) then
+        Consider(best, trigger[2], trigger[1], px, py, pi)
+    end
+    return best.spawn, best.zone, best.name, best.dist
+end
+
+-- "no Questie data": Questie is on but QuestieDB doesn't answer (missing, or a contract we
+-- don't know)
+local function DataReachable()
+    return QDB() ~= nil
 end
 
 -- FlareUI's distance sort, the distances on the lines and the tooltip all ask within a
@@ -51,56 +295,32 @@ end
 local NEAREST_TTL = 1
 local nearestCache = {}
 
--- spawn, areaId, name, distance (yards) of where to go next: the nearest unfinished
--- objective, or the turn-in once the quest is complete
+-- spawn, areaId, name, distance (yards, or nil when unknown) of where to go next
 local function Nearest(questID)
     local now = GetTime()
     local hit = nearestCache[questID]
     if hit and now - hit.t < NEAREST_TTL then return hit[1], hit[2], hit[3], hit[4] end
     local spawn, zone, name, dist
-    local quest = QuestOf(questID)
-    local DU = Module("DistanceUtils")
-    if quest and DU and DU.GetNearestSpawnForQuest then
-        local ok, s, z, n, d = pcall(DU.GetNearestSpawnForQuest, quest)
-        if ok and s and d and d < NO_DATA then spawn, zone, name, dist = s, z, n, d end
-    end
+    local ok, s, z, n, d = pcall(DBNearest, questID)
+    if ok then spawn, zone, name, dist = s, z, n, d end
     nearestCache[questID] = { spawn, zone, name, dist, t = now }
     return spawn, zone, name, dist
 end
 
-local function ZoneName(areaID)
-    local TU = Module("TrackerUtils")
-    if not (areaID and TU and TU.GetZoneNameByID) then return nil end
-    local ok, name = pcall(TU.GetZoneNameByID, TU, areaID)
-    return ok and name or nil
-end
-
-local function PlayerAreaID()
-    local ZDB = Module("ZoneDB")
-    local mapID = C_Map.GetBestMapForUnit("player")
-    if not (ZDB and mapID) then return nil end
-    local ok, areaID = pcall(ZDB.GetAreaIdByUiMapId, ZDB, mapID)
-    return ok and areaID or nil
-end
-
--- HereBeDragons' angles run anticlockwise from north, as GetPlayerFacing's do
+-- HereBeDragons' angles, anticlockwise from north as GetPlayerFacing's
 local COMPASS = { "N", "NW", "W", "SW", "S", "SE", "E", "NE" }
 local function Compass(spawn, areaID)
-    local HBD, ZDB = Module("HBD"), Module("ZoneDB")
-    if not (HBD and ZDB and spawn and spawn[1] and spawn[1] >= 0) then return nil end
-    local ok, angle = pcall(function()
-        local px, py, pi = HBD:GetPlayerWorldPosition()
-        local mapID = ZDB:GetUiMapIdByAreaId(areaID)
-        local x, y, i = HBD:GetWorldCoordinatesFromZone(spawn[1] / 100, spawn[2] / 100, mapID)
-        if not (px and x) or pi ~= i then return nil end
-        return (HBD:GetWorldVector(i, px, py, x, y))
-    end)
-    if not (ok and angle) then return nil end
+    if not (spawn and spawn[1] and spawn[1] >= 0) then return nil end
+    local px, py, pi = PlayerWorld()
+    local x, y, i = SpotWorld(areaID, spawn[1], spawn[2])
+    if not (px and x) or pi ~= i then return nil end
+    local angle = math.atan2(-(x - px), y - py)
+    angle = angle > 0 and (2 * math.pi - angle) or -angle
     return COMPASS[math.floor((angle + math.pi / 8) / (math.pi / 4)) % 8 + 1]
 end
 
 local function Yards(dist)
-    if dist >= OTHER_PLACE then return nil end
+    if not dist or dist >= OTHER_PLACE then return nil end
     if dist < 1000 then return ("%d yd"):format(dist) end
     return ("%.1fk yd"):format(dist / 1000)
 end
@@ -115,18 +335,34 @@ local function LocalDistance(questID)
     return dist * dist
 end
 
--- link, texture, charges, showWhenComplete: as GetQuestLogSpecialItemInfo answers
+-- as Questie's tracker picks them: owned, and used or worn
+local function UsableItem(itemID)
+    if type(itemID) ~= "number" or C_Item.GetItemCount(itemID) == 0 then return false end
+    local spell = (C_Item.GetItemSpell or GetItemSpell)(itemID)
+    return spell ~= nil or (C_Item.IsEquippableItem or IsEquippableItem)(itemID) and true
+        or false
+end
+
+-- link, texture, charges, showWhenComplete: as GetQuestLogSpecialItemInfo answers. FlareUI
+-- asks only when the quest log names no item of its own.
 local function LocalQuestItem(questID)
-    local quest = QuestOf(questID)
-    local TU = Module("TrackerUtils")
-    if not (quest and TU and TU.GetQuestItemIds) then return nil end
-    local complete = C_QuestLog.IsComplete(questID) and 1 or 0
-    local ok, items = pcall(TU.GetQuestItemIds, quest, complete)
-    local itemID = ok and type(items) == "table" and items[1]
-    if not itemID then return nil end
-    local texture = C_Item.GetItemIconByID(itemID)
-    if not texture then return nil end
-    return "item:" .. itemID, texture, C_Item.GetItemCount(itemID), false
+    if C_QuestLog.IsComplete(questID) then return nil end
+    local candidates = { Field("Quest", questID, "sourceItemId") }
+    for _, id in ipairs(Field("Quest", questID, "requiredSourceItems") or {}) do
+        candidates[#candidates + 1] = id
+    end
+    local objectives = Field("Quest", questID, "objectives")
+    for _, e in ipairs(type(objectives) == "table" and objectives[3] or {}) do
+        candidates[#candidates + 1] = e[1]
+    end
+    for _, itemID in ipairs(candidates) do
+        if UsableItem(itemID) then
+            local texture = C_Item.GetItemIconByID(itemID)
+            if texture then
+                return "item:" .. itemID, texture, C_Item.GetItemCount(itemID), false
+            end
+        end
+    end
 end
 
 local function LocalCompleteText(questID)
@@ -138,11 +374,12 @@ local function LocalCompleteText(questID)
     return ("Return to %s"):format(name)
 end
 
+-- the map of the nearest spot's zone, where Questie's own icons show the rest
 local function LocalShowOnMap(questID)
-    local TU = Module("TrackerUtils")
-    if not (TU and TU.ShowQuestOnMap) then return false end
-    local ok, shown = pcall(TU.ShowQuestOnMap, questID)
-    return ok and shown and true or false
+    local _, zone = Nearest(questID)
+    local mapID = UiMapOf(zone)
+    if not (mapID and OpenWorldMap) then return false end
+    return (pcall(OpenWorldMap, mapID))
 end
 
 --------------------------------------------------
@@ -157,6 +394,22 @@ end
 
 ---@type table<FQLine, true>
 local hookedLines = {}
+-- FlareUI_QuestTrackerAPI when FlareUI offers it (7.0.17+), and its star placing (below)
+local trackerAPI, PlaceStars
+
+-- a quest row of FlareUI's tracker (the API lists only titles in view; tooltips also come
+-- from objective lines and rows out of view)
+local function IsTrackerLine(frame)
+    if not frame or not frame.questID then return false end
+    if hookedLines[frame] then return true end
+    local holder = trackerAPI and _G.FlareUI_ObjectiveTracker
+    local parent = holder and frame.text and frame:GetParent()
+    while parent do
+        if parent == holder then return true end
+        parent = parent:GetParent()
+    end
+    return false
+end
 
 local function HookLines()
     local holder = _G.FlareUI_ObjectiveTracker
@@ -210,7 +463,9 @@ local function UpdateDistances()
             label:SetText(text)
             -- only beside a name that leaves room on its one line (a wrapped name measures
             -- its full length, so it never fits)
+            local star = line.fqStar and line.fqStar:IsShown() and line.fqStar:GetWidth() + 3
             local room = line:GetWidth() - line.text:GetStringWidth() - label:GetStringWidth()
+                - (star or 0)
             if room >= 6 then
                 label:Show()
                 if not nearestDist or dist < nearestDist then
@@ -233,6 +488,35 @@ local function UpdateDistances()
 end
 
 --------------------------------------------------
+-- Quests new on Forever: a star after the name. Forever numbers its own quests from 60000:
+-- of the ~1,230 quests Questie has traced on Forever but Classic never had, all but 15 are.
+--------------------------------------------------
+local FOREVER_FIRST_ID = 60000
+local FOREVER_MARK = " |A:%s:%d:%d|a"
+local FOREVER_ATLAS = "PetJournal-FavoritesIcon"
+
+local function ForeverQuest(questID)
+    return type(questID) == "number" and questID >= FOREVER_FIRST_ID
+end
+
+-- FlareUI may keep a line's text across renders: turning the star off strips it
+local function MarkForever()
+    if trackerAPI then return PlaceStars() end
+    for line in pairs(hookedLines) do
+        local text = line.text:GetText()
+        local marked = text and text:find(FOREVER_ATLAS, 1, true)
+        local want = db.forever and line.kind == "title" and ForeverQuest(line.questID)
+        if want and text and not marked then
+            local size = math.floor(select(2, line.text:GetFont()) or 12)
+            line.text:SetText(text .. FOREVER_MARK:format(FOREVER_ATLAS, size, size))
+        elseif marked and not want then
+            local atlas = FOREVER_ATLAS:gsub("%-", "%%-")
+            line.text:SetText((text:gsub(" |A:" .. atlas .. ":%d+:%d+|a", "")))
+        end
+    end
+end
+
+--------------------------------------------------
 -- Header count: orange with two free quest log slots or fewer, red when full
 --------------------------------------------------
 local FREE_WARN = 2
@@ -250,6 +534,16 @@ local function MarkLogFull()
     if colour then
         head.title:SetText((text:gsub("|c%x%x%x%x%x%x%x%x(%d+/%d+)|r$", colour .. "%1|r")))
     end
+end
+
+local ITEM_BUTTON = "MeioFlareQuestieItemButton"
+local ITEM_BINDING = "CLICK " .. ITEM_BUTTON .. ":LeftButton"
+-- questID and itemID on the quest item key (set below, read by the tooltip)
+local keyed = {}
+
+local function ItemKey()
+    local key = GetBindingKey(ITEM_BINDING)
+    return key and GetBindingText(key, "KEY_") or nil
 end
 
 --------------------------------------------------
@@ -290,14 +584,68 @@ local function AddLevelLines(questID)
     if #kinds > 0 then GameTooltip:AddLine(table.concat(kinds, ", "), 1, 1, 1) end
 end
 
+-- QuestieDB's base XP adjusted as Questie does: less for a quest below the player's level,
+-- none at the level cap (XP buffs left out)
+local function QuestXP(questID)
+    local support = Support("QuestXP")
+    local entry = support and type(support.db) == "table" and support.db[questID]
+    local questLevel, xp = entry and entry[1], entry and entry[2]
+    if not (questLevel and xp and questLevel > 0 and xp > 0) then return 0 end
+    local level = UnitLevel("player")
+    if level >= GetMaxPlayerLevel() then return 0 end
+    xp = xp * math.max(1, math.min(10, 2 * (questLevel - level) + 20)) / 10
+    local floor = math.floor
+    if xp <= 100 then
+        xp = 5 * floor((xp + 2) / 5)
+    elseif xp <= 500 then
+        xp = 10 * floor((xp + 5) / 10)
+    elseif xp <= 1000 then
+        xp = 25 * floor((xp + 12) / 25)
+    else
+        xp = 50 * floor((xp + 25) / 50)
+    end
+    return floor(xp)
+end
+
+-- the next quest's name, how many follow this one, and the XP of this one and those
+local CHAIN_MAX = 40
+local function Chain(questID)
+    local nextID = Field("Quest", questID, "nextQuestInChain")
+    if not (nextID and nextID > 0) then return nil end
+    local xp, count, seen, id = QuestXP(questID), 0, { [questID] = true }, nextID
+    while id and id > 0 and not seen[id] and count < CHAIN_MAX do
+        seen[id] = true
+        count = count + 1
+        xp = xp + QuestXP(id)
+        id = Field("Quest", id, "nextQuestInChain")
+    end
+    return Field("Quest", nextID, "name"), count, xp
+end
+
+local function AddChainLines(questID)
+    local name, count, xp = Chain(questID)
+    if not name then return end
+    local n = NORMAL_FONT_COLOR
+    local after = count > 1 and ("then %d more"):format(count - 1) or ""
+    GameTooltip:AddDoubleLine("Next: |cffffffff" .. name .. "|r", after,
+        n.r, n.g, n.b, 0.6, 0.6, 0.6)
+    if xp > 0 then
+        GameTooltip:AddLine("Chain XP left: " .. BreakUpLargeNumbers(xp), 0.6, 0.6, 0.6)
+    end
+end
+
 local function AddQuestieLines()
     local line = GameTooltip:GetOwner() --[[@as FQLine?]]
-    if GameTooltip.fqAdded or not (line and hookedLines[line] and line.questID) then return end
+    if GameTooltip.fqAdded or not IsTrackerLine(line) then return end
     GameTooltip.fqAdded = true
     local questID = line.questID
     local spawn, zone, name, dist = Nearest(questID)
     local shift = IsShiftKeyDown()
     GameTooltip:AddLine(" ")
+    if db.forever and ForeverQuest(questID) then
+        GameTooltip:AddLine(FOREVER_MARK:format(FOREVER_ATLAS, 12, 12):sub(2)
+            .. " New on Forever", 0.4, 0.8, 1)
+    end
     if name then
         local label = C_QuestLog.IsComplete(questID) and "Turn in" or "Nearest"
         local where = ZoneName(zone)
@@ -309,6 +657,18 @@ local function AddQuestieLines()
         if yards and where and zone ~= PlayerAreaID() then
             GameTooltip:AddLine(where, 0.6, 0.6, 0.6)
         end
+    elseif QuestieLoaded() and not DataReachable() then
+        GameTooltip:AddLine("No Questie data (see /flarequestie status)", 0.6, 0.6, 0.6)
+    elseif QDB() and not Field("Quest", questID, "name") then
+        -- Forever adds quests Questie's database doesn't have yet
+        GameTooltip:AddLine("Not in Questie's data yet: no yards or turn-in", 0.6, 0.6, 0.6)
+    elseif QuestieLoaded() then
+        GameTooltip:AddLine("Questie knows no spot for this step", 0.6, 0.6, 0.6)
+    end
+    AddChainLines(questID)
+    local key = keyed.questID == questID and ItemKey()
+    if key then
+        GameTooltip:AddLine(HINT .. "Item on your quest item key: " .. key .. "|r")
     end
     if shift then
         AddLevelLines(questID)
@@ -326,7 +686,7 @@ end
 -- quest, so leave and enter it again
 local function RefreshTooltip()
     local line = GameTooltip:IsShown() and GameTooltip:GetOwner()
-    if not (line and hookedLines[line] and line.questID and line:IsMouseOver()) then return end
+    if not (IsTrackerLine(line) and line:IsMouseOver()) then return end
     local leave, enter = line:GetScript("OnLeave"), line:GetScript("OnEnter")
     if not (leave and enter) then return end
     leave(line)
@@ -364,6 +724,206 @@ local function ItemSignature()
         end
     end
     return table.concat(parts, ",")
+end
+
+--------------------------------------------------
+-- Quest item key: one key binding (Key Bindings > AddOns) uses the item of the nearest
+-- quest that has one. A secure button can only change outside combat: in a fight the key
+-- keeps the item it had when the fight began.
+--------------------------------------------------
+BINDING_HEADER_MEIOFLAREQUESTIE = "MeioFlareQuestie"
+_G["BINDING_NAME_" .. ITEM_BINDING] = "Use the nearest quest's item"
+
+local itemButton = CreateFrame("Button", ITEM_BUTTON, UIParent, "SecureActionButtonTemplate")
+itemButton:RegisterForClicks("AnyUp", "AnyDown")
+itemButton:SetAttribute("type", "item")
+itemButton:Hide()
+-- the log's own item first (FlareUI's button shows that one), then Questie's
+local function QuestItemID(logIndex, questID)
+    local link = GetQuestLogSpecialItemInfo(logIndex) or LocalQuestItem(questID)
+    return link and tonumber(link:match("item:(%d+)"))
+end
+
+-- nearest by Questie's yards; quests it can't place come after, in log order
+local function NearestItemQuest()
+    local bestQuest, bestItem, bestDist
+    for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+        local info = C_QuestLog.GetInfo(i)
+        local questID = info and not info.isHeader and info.questID
+        local itemID = questID and questID > 0 and QuestItemID(i, questID)
+        if itemID then
+            local dist = select(4, Nearest(questID)) or math.huge
+            if not bestQuest or dist < bestDist then
+                bestQuest, bestItem, bestDist = questID, itemID, dist
+            end
+        end
+    end
+    return bestQuest, bestItem
+end
+
+local function UpdateItemKey()
+    if InCombatLockdown() then return end
+    local questID, itemID = NearestItemQuest()
+    if itemID == keyed.itemID and questID == keyed.questID then return end
+    keyed.questID, keyed.itemID = questID, itemID
+    itemButton:SetAttribute("item", itemID and ("item:" .. itemID) or nil)
+end
+
+--------------------------------------------------
+-- FlareUI 7.0.17+ (FlareUI_QuestTrackerAPI, its public API): the rows come from it, not from
+-- FlareUI's frames, and Questie's quest items go in each row's button slot, no patch needed.
+-- Its rows are read only: no Render hook for them, and the Forever star is a texture of ours.
+-- The callback runs only out of a fight; in one, the ticker still reads each row's quest.
+--------------------------------------------------
+local rowItems = {}
+
+local function RowItemButton(i)
+    local b = rowItems[i]
+    if b then return b end
+    b = CreateFrame("Button", "MeioFlareQuestieRowItem" .. i, UIParent,
+        "SecureActionButtonTemplate")
+    b:SetFrameStrata("MEDIUM")
+    b:RegisterForClicks("AnyUp", "AnyDown")
+    b:SetAttribute("type", "item")
+    b.icon = b:CreateTexture(nil, "BACKGROUND")
+    b.icon:SetAllPoints()
+    b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    b.cooldown = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
+    b.cooldown:SetAllPoints(b.icon)
+    b.border = CreateFrame("Frame", nil, b, "BackdropTemplate")
+    b.border:SetAllPoints(b.icon)
+    b.border:SetFrameLevel(b:GetFrameLevel() + 2)
+    b.count = b.border:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    b.count:SetPoint("BOTTOMRIGHT", -2, 2)
+    b:SetScript("OnEnter", function(self)
+        if not self.itemID then return end
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetItemByID(self.itemID)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:Hide()
+    rowItems[i] = b
+    return b
+end
+
+-- FlareUI's own item button border where it has one, else a plain dark edge
+local function StyleRowItem(b, size)
+    if b.styledAt == size then return end
+    b.styledAt = size
+    b:SetSize(size, size)
+    local lsm = LibStub and LibStub("LibSharedMedia-3.0", true)
+    local file = lsm and lsm:Fetch("border", "FlareUI Frames", true)
+    local edge = FlareUI and FlareUI.BorderEdgeSize
+    local ok, edgeSize = false, nil
+    if file and edge then ok, edgeSize = pcall(edge, file, math.floor(16 * size / 50 + 0.5)) end
+    if ok and edgeSize then
+        b.border:SetBackdrop({ edgeFile = file, edgeSize = edgeSize })
+    else
+        b.border:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+    end
+    local c = FlareUI and FlareUI.BORDER_COLOR or { r = 0, g = 0, b = 0, a = 1 }
+    b.border:SetBackdropBorderColor(c.r, c.g, c.b, c.a or 1)
+end
+
+local function UpdateRowItemCooldowns()
+    for _, b in ipairs(rowItems) do
+        if b:IsShown() and b.itemID then
+            local start, duration, enable = C_Container.GetItemCooldown(b.itemID)
+            if start then CooldownFrame_Set(b.cooldown, start, duration, enable) end
+        end
+    end
+end
+
+local function PlaceRowItems(rows)
+    if InCombatLockdown() then return end
+    local used = 0
+    for _, row in ipairs(rows) do
+        local link, texture, charges
+        if not row.hasItem then link, texture, charges = LocalQuestItem(row.questID) end
+        local itemID = link and tonumber(link:match("item:(%d+)"))
+        if itemID then
+            used = used + 1
+            local b = RowItemButton(used)
+            StyleRowItem(b, row.size)
+            if b.itemID ~= itemID then
+                b.itemID = itemID
+                b:SetAttribute("item", "item:" .. itemID)
+                b.icon:SetTexture(texture)
+            end
+            b.questID = row.questID
+            b.count:SetText(charges and charges > 1 and tostring(charges) or "")
+            b:ClearAllPoints()
+            b:SetPoint(row.point, UIParent, "BOTTOMLEFT", row.x, row.y)
+            b:Show()
+        end
+    end
+    for i = used + 1, #rowItems do
+        rowItems[i]:Hide()
+        rowItems[i].itemID, rowItems[i].questID = nil, nil
+    end
+    UpdateRowItemCooldowns()
+end
+
+local function StarTexture(line)
+    local star = line.fqStar
+    if star then return star end
+    star = line:CreateTexture(nil, "OVERLAY")
+    star:SetAtlas(FOREVER_ATLAS)
+    line.fqStar = star
+    return star
+end
+
+-- after the name's end on its first line; a wrapped name gets it at the text's right edge
+function PlaceStars()
+    for line in pairs(hookedLines) do
+        local want = db.forever and line:IsShown() and line.kind == "title"
+            and ForeverQuest(line.questID)
+        if want then
+            local star = StarTexture(line)
+            local size = math.floor(select(2, line.text:GetFont()) or 12)
+            local width, room = line.text:GetStringWidth(), line.text:GetWidth()
+            star:SetSize(size, size)
+            star:ClearAllPoints()
+            star:SetPoint("TOPLEFT", line.text, "TOPLEFT", math.min(width, room) + 3, 0)
+            star:Show()
+        elseif line.fqStar then
+            line.fqStar:Hide()
+        end
+    end
+end
+
+local function OnTrackerRows(rows)
+    local fresh = {}
+    for _, row in ipairs(rows) do
+        if row.line and row.line.text then fresh[row.line] = true end
+    end
+    for line in pairs(hookedLines) do
+        if not fresh[line] then
+            if line.fqDistance then line.fqDistance:Hide() end
+            if line.fqStar then line.fqStar:Hide() end
+        end
+    end
+    hookedLines = fresh
+    PlaceStars()
+    UpdateDistances()
+    PlaceRowItems(rows)
+end
+
+local function UseTrackerAPI()
+    local api = rawget(_G, "FlareUI_QuestTrackerAPI")
+    if type(api) ~= "table" or type(api.version) ~= "number" or api.version < 1
+            or type(api.RegisterCallback) ~= "function" then
+        return false
+    end
+    local ok = pcall(api.RegisterCallback, api, "MeioFlareQuestie", OnTrackerRows)
+    if not ok then return false end
+    trackerAPI = api
+    if api.GetRows then
+        local got, rows = pcall(api.GetRows, api)
+        if got and type(rows) == "table" then OnTrackerRows(rows) end
+    end
+    return true
 end
 
 --------------------------------------------------
@@ -718,6 +1278,8 @@ local function InitDB()
         db.fontsSet, db.followSet = nil, nil
     end
     if db.distance == nil then db.distance = true end
+    -- off until its look is checked in game
+    if db.forever == nil then db.forever = false end
     db.dbVersion = DB_VERSION
 end
 
@@ -746,10 +1308,14 @@ local function WarnMissingPatches()
     Print(PatchAdvice(missing))
 end
 
+-- the header, search and grip; the rows only without FlareUI's API (its callback has them)
 local function AfterRender()
-    HookLines()
+    if not trackerAPI then
+        HookLines()
+        MarkForever()
+        UpdateDistances()
+    end
     MarkLogFull()
-    UpdateDistances()
     UpdateSearchCount()
     if grip then PlaceGrip() else CreateGrip() end
 end
@@ -767,13 +1333,21 @@ local function Setup()
         hooksecurefunc(OT.Build, "LayoutHeader", LayoutSearch)
         if OT.initialized then Redraw() end
     end
+    UseTrackerAPI()
     hooksecurefunc(OT, "Render", AfterRender)
-    hooksecurefunc(OT, "UpdateItemCooldowns", UpdateLocalCooldowns)
+    hooksecurefunc(OT, "UpdateItemCooldowns", function()
+        UpdateLocalCooldowns()
+        UpdateRowItemCooldowns()
+    end)
     hooksecurefunc(GameTooltip, "Show", AddQuestieLines)
     GameTooltip:HookScript("OnTooltipCleared", function(tt)
         tt.fqAdded, tt.meioShiftHint = nil, nil
     end)
-    C_Timer.NewTicker(1, UpdateDistances)
+    C_Timer.NewTicker(1, function()
+        if trackerAPI then PlaceStars() end
+        UpdateDistances()
+        UpdateItemKey()
+    end)
     WarnMissingPatches()
     return true
 end
@@ -799,7 +1373,7 @@ local function RegisterSettings()
             layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(name, tip))
         end
     end
-    local note = not QuestieLoader and " (Questie not loaded)"
+    local note = not QuestieLoaded() and " (Questie not loaded)"
         or #MissingPatches() > 0 and " (FlareUI patches missing: /flarequestie status)" or ""
     Section("Quest tracker" .. note, "FlareUI's quest tracker, with where to go from"
         .. " Questie's database. Hover a quest for the nearest objective; Shift for more.")
@@ -810,6 +1384,15 @@ local function RegisterSettings()
     Settings.CreateCheckbox(category, distance, "Yards to the quest's nearest objective, or"
         .. " to its turn-in once done, at the right of its name. The nearest quest's is"
         .. " white. Needs Questie.")
+
+    local forever = Settings.RegisterAddOnSetting(category, "MEIOFLAREQUESTIE_FOREVER",
+        "forever", db, Settings.VarType.Boolean, "Mark Forever quests", false)
+    forever:SetValueChangedCallback(function()
+        MarkForever()
+        Redraw()
+    end)
+    Settings.CreateCheckbox(category, forever, "A star after the name of quests new on"
+        .. " Forever, the ones the original game never had.")
 
     local compact = Settings.RegisterAddOnSetting(category, "MEIOFLAREQUESTIE_COMPACT",
         "compact", db, Settings.VarType.Boolean, "Compact spacing", false)
@@ -838,6 +1421,9 @@ local function RegisterSettings()
             function() ResetSize() end, "Back to FlareUI's default width and height. Drag the"
             .. " tracker's bottom corner grip to resize it.", true))
     end
+    Section("Quest item key", "Key Bindings > AddOns > MeioFlareQuestie: one key uses the"
+        .. " item of the nearest quest that has one. It picks again a second after you move,"
+        .. " but not during a fight.")
     Settings.RegisterAddOnCategory(category)
 end
 
@@ -864,6 +1450,15 @@ events:SetScript("OnEvent", function(self, event, arg1)
         local ok, err = pcall(RegisterSettings)
         if not ok then geterrorhandler()(err) end
         if not ready then return end
+        -- Questie's public API: draw again once its quest state is built
+        local api = Questie and Questie.API
+        if api and api.RegisterOnReady then
+            pcall(api.RegisterOnReady, function()
+                wipe(nearestCache)
+                itemSignature = ItemSignature()
+                Redraw()
+            end)
+        end
         self:RegisterEvent("BAG_UPDATE_DELAYED")
         self:RegisterEvent("PLAYER_ENTERING_WORLD")
         self:RegisterEvent("MODIFIER_STATE_CHANGED")
@@ -898,9 +1493,15 @@ local function Status()
     end
     local missing = MissingPatches()
     if #missing > 0 then Print(PatchAdvice(missing)) end
-    if not QuestieLoader then
+    if not QuestieLoaded() then
         Print("Questie isn't loaded, so no distances, quest items or turn-in NPCs."
             .. " The resize grip and settings still work.")
+        return
+    end
+    if not DataReachable() then
+        Print("No Questie data: QuestieDB is missing or changed, so no distances, quest"
+            .. " items or turn-in NPCs. Update Questie (it brings QuestieDB) and"
+            .. " MeioFlareQuestie.")
         return
     end
     local logged, located, items = 0, 0, 0
@@ -915,6 +1516,17 @@ local function Status()
     local max = C_QuestLog.GetMaxNumQuestsCanAccept and C_QuestLog.GetMaxNumQuestsCanAccept()
     Print(("%d%s quests in the log: Questie locates %d, has a usable item for %d."):format(
         logged, max and ("/" .. max) or "", located, items))
+    local key = ItemKey()
+    local name = keyed.itemID and C_Item.GetItemNameByID(keyed.itemID)
+    if not key then
+        Print(HINT .. "Tip: Key Bindings > AddOns > MeioFlareQuestie puts the nearest quest's"
+            .. " item on a key.|r")
+    elseif name then
+        Print(("Quest item key %s: %s (%s)."):format(Cmd(key), name,
+            keyed.questID and C_QuestLog.GetTitleForQuestID(keyed.questID) or keyed.questID))
+    else
+        Print(("Quest item key %s: no quest item in your bags."):format(Cmd(key)))
+    end
     if tracker and not (tracker.sortByDistance and not tracker.zoneFirst) then
         Print(HINT .. "Tip: FlareUI Settings > Quest Tracker > Sort: Distance orders quests by"
             .. " the nearest objective.|r")
@@ -935,6 +1547,8 @@ local function Help()
     Line("/flarequestie status", "what Questie finds for your quests, and tips")
     Line("/flarequestie distance on||off", "yards to each quest (now "
         .. OnOff(db.distance) .. ")")
+    Line("/flarequestie forever on||off", "a star on quests new on Forever (now "
+        .. OnOff(db.forever) .. ")")
     Line("/flarequestie compact on||off", "tighter tracker spacing, after /reload (now "
         .. OnOff(db.compact) .. ")")
     Line("/flarequestie fonts small||default", "tracker text 11/10/9 or FlareUI's 13/12/11")
@@ -942,8 +1556,7 @@ local function Help()
     Line("/flarequestie search [text]", "list only the quests that match (no text: clear);"
         .. " also the magnifier in the tracker's header")
     DEFAULT_CHAT_FRAME:AddMessage("  Settings: Esc > Options > AddOns > MeioFlareQuestie ("
-        .. Cmd("/flarequestie settings") .. ")")
-end
+        .. Cmd("/flarequestie settings") .. ")")end
 
 local function NeedTracker()
     if OT then return true end
@@ -975,6 +1588,11 @@ SlashCmdList.MEIOFLAREQUESTIE = function(msg)
     elseif cmd == "distance" and (arg == "on" or arg == "off") then
         SetDistance(arg == "on")
         Print("quest distances " .. OnOff(db.distance))
+    elseif cmd == "forever" and (arg == "on" or arg == "off") then
+        db.forever = arg == "on"
+        MarkForever()
+        Redraw()
+        Print("star on Forever quests " .. OnOff(db.forever))
     elseif cmd == "compact" and (arg == "on" or arg == "off") then
         SetCompact(arg == "on")
         if not (OT and OT.Constants) then

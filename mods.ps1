@@ -192,25 +192,62 @@ function Get-AddonVersion([string]$addon) {
 Say "# LocalMods $Command - $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
 Say ''
 Say '## Overlay addons'
+# released\<Name>.txt (tools/released-record.sh; absent for players): what the newest tag
+# shipped. A build that differs is deployed with "## Version: <v>-dev" in the game's .toc,
+# so BugGrabber and MeioHub don't show unreleased code under a released number.
+function Test-DevBuild($srcDir, [string]$tocText) {
+    $rec = Join-Path $Root "released\$($srcDir.Name).txt"
+    if (-not (Test-Path -LiteralPath $rec)) { return $false }
+    $lines = @(Get-Content -LiteralPath $rec)
+    $v = [regex]::Match($tocText, '(?m)^## Version:[ \t]*(\S+)')
+    if (-not $v.Success -or "version $($v.Groups[1].Value)" -ne $lines[0]) { return $true }
+    $want = @{}
+    foreach ($l in $lines | Select-Object -Skip 1) { if ($l -match '^(\w+)  (.+)$') { $want[$Matches[2]] = $Matches[1] } }
+    $loaded = @($tocText -split "`r?`n" | ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object { $_ -replace '\\', '/' })
+    if (Test-Path -LiteralPath (Join-Path $srcDir.FullName 'Bindings.xml')) { $loaded += 'Bindings.xml' }
+    foreach ($f in @($loaded) + @($want.Keys) | Select-Object -Unique) {
+        $p = Join-Path $srcDir.FullName $f
+        if (-not $want.ContainsKey($f) -or -not (Test-Path -LiteralPath $p)) { return $true }
+        if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLower() -ne $want[$f]) { return $true }
+    }
+    $false
+}
 $newAddon = $false
 foreach ($src in Get-ChildItem (Join-Path $Root 'addons') -Directory -ErrorAction SilentlyContinue) {
     $dest = Join-Path $AddOns $src.Name
+    $tocRel = "$($src.Name).toc"
+    $tocPath = Join-Path $src.FullName $tocRel
+    $devToc = $null
+    if (Test-Path -LiteralPath $tocPath) {
+        $t = Read-Text $tocPath
+        if (Test-DevBuild $src $t.Text) {
+            $text = [regex]::Replace($t.Text, '(?m)^(## Version:[ \t]*)(\S+?)(\r?)$', '${1}${2}-dev${3}')
+            $devToc = [byte[]]([Text.UTF8Encoding]::new($t.Bom).GetPreamble() + [Text.UTF8Encoding]::new($false).GetBytes($text))
+        }
+    }
+    $dev = $devToc ? ' [dev build]' : ''
     $changed = @()
     foreach ($f in Get-ChildItem $src.FullName -Recurse -File) {
         $rel = [IO.Path]::GetRelativePath($src.FullName, $f.FullName)
         $d = Join-Path $dest $rel
+        if ($devToc -and $rel -eq $tocRel) {
+            if (-not (Test-Path $d) -or -not [Linq.Enumerable]::SequenceEqual([IO.File]::ReadAllBytes($d), $devToc)) { $changed += $rel }
+            continue
+        }
         if (-not (Test-Path $d) -or (Get-FileHash $d).Hash -ne (Get-FileHash $f.FullName).Hash) { $changed += $rel }
     }
     $missing = -not (Test-Path $dest)
-    if ($changed.Count -eq 0) { Say "- $($src.Name): installed, up to date"; continue }
-    if ($checkOnly -or (Skip-Item $src.Name)) { Say "- $($src.Name): $($missing ? 'NOT INSTALLED' : "out of date ($($changed -join ', '))")"; continue }
+    if ($changed.Count -eq 0) { Say "- $($src.Name): installed, up to date$dev"; continue }
+    if ($checkOnly -or (Skip-Item $src.Name)) { Say "- $($src.Name): $($missing ? 'NOT INSTALLED' : "out of date ($($changed -join ', '))")$dev"; continue }
     foreach ($rel in $changed) {
         $d = Join-Path $dest $rel
         New-Item -ItemType Directory -Force (Split-Path $d) | Out-Null
-        Copy-Item -LiteralPath (Join-Path $src.FullName $rel) $d -Force
+        if ($devToc -and $rel -eq $tocRel) { [IO.File]::WriteAllBytes($d, $devToc) }
+        else { Copy-Item -LiteralPath (Join-Path $src.FullName $rel) $d -Force }
     }
     if ($missing) { $newAddon = $true }
-    Say "- $($src.Name): $($missing ? 'INSTALLED (new)' : "updated ($($changed -join ', '))")"
+    Say "- $($src.Name): $($missing ? 'INSTALLED (new)' : "updated ($($changed -join ', '))")$dev"
 }
 
 # ---------------------------------------------------------------- retired addons
@@ -236,12 +273,13 @@ $retired = [ordered]@{
     SpikeCheck = 'renamed MeioSpikeCheck'
     FlareQuestie = 'renamed MeioFlareQuestie'
     TSMBrowse = 'renamed MeioTSMBrowse'
-    TooltipFold = 'renamed MeioTooltipFold'
+    TooltipFold = 'renamed MeioTooltipFold, now MeioTooltips'
     AutoRank = 'renamed MeioAutoRank'
     MeterHover = 'renamed MeioMeterHover'
     NextStop = 'renamed MeioNextStop'
     TrainerCompare = 'renamed MeioTrainerCompare'
     FlareFixes = 'renamed MeioFlareFixes; would apply the same fixes twice'
+    MeioTooltipFold = 'renamed MeioTooltips'
 }
 $wtf = Join-Path $AddOns '..\..\WTF\Account'
 $retiredDir = Join-Path $AddOns '..\RetiredAddOns'
