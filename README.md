@@ -1,6 +1,6 @@
 # Meio Flare Questie
 
-Questie's quest data in FlareUI's quest tracker: how far each quest is and who to hand it in to.
+For FlareUI: Questie's data in its quest tracker, how far each quest is and who takes it in.
 
 For WoW Forever.
 
