@@ -1,5 +1,9 @@
 # MeioFlareQuestie
 
+## 1.3.1
+
+- Settings: the switch for the star on quests new on Forever is now called "Star new quests"
+
 ## 1.3.0
 
 - Reads Questie's data through QuestieDB only, never Questie's insides: ready for Questie's

@@ -1386,7 +1386,7 @@ local function RegisterSettings()
         .. " white. Needs Questie.")
 
     local forever = Settings.RegisterAddOnSetting(category, "MEIOFLAREQUESTIE_FOREVER",
-        "forever", db, Settings.VarType.Boolean, "Mark Forever quests", false)
+        "forever", db, Settings.VarType.Boolean, "Star new quests", false)
     forever:SetValueChangedCallback(function()
         MarkForever()
         Redraw()
